@@ -1,0 +1,8 @@
+test: Path("/headers") -> "http://httpbin.org";
+callback: Path("/callback") -> callback() -> <shunt>;
+
+catchAll: *
+    -> auditLog()
+    -> auth()
+    -> dropRequestHeader("Authorization")
+    -> "https://www.example.org";

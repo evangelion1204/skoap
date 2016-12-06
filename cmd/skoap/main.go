@@ -16,6 +16,8 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/zalando-incubator/skoap"
+	skoapFilters "github.com/zalando-incubator/skoap/filters"
+	"github.com/zalando-incubator/skoap/strategies"
 	"github.com/zalando/skipper"
 	"github.com/zalando/skipper/eskip"
 	"github.com/zalando/skipper/filters"
@@ -248,8 +250,11 @@ func main() {
 		Address:    address,
 		EtcdPrefix: etcdPrefix,
 		CustomFilters: []filters.Spec{
-			skoap.NewAuth(authUrlBase),
-			skoap.NewAuthTeam(authUrlBase, teamUrlBase),
+			skoapFilters.NewCallback(strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
+			// skoap.NewAuth(authUrlBase, strategies.NewPassthrough()),
+			// skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewPassthrough()),
+			skoap.NewAuth(authUrlBase, strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
+			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
 			skoap.NewBasicAuth(),
 			skoap.NewAuditLog(os.Stderr)},
 		AccessLogDisabled:   true,

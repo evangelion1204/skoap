@@ -103,6 +103,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"github.com/zalando-incubator/skoap/strategies"
 )
 
 const (
@@ -155,6 +156,7 @@ type (
 		typ        roleCheckType
 		authClient *authClient
 		teamClient *teamClient
+		strategy   strategies.Strategy
 	}
 
 	filter struct {
@@ -163,6 +165,7 @@ type (
 		teamClient *teamClient
 		realm      string
 		args       []string
+		strategy   strategies.Strategy
 	}
 
 	basic string
@@ -209,14 +212,17 @@ func getToken(r *http.Request) (string, error) {
 	return h[len(b):], nil
 }
 
-func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason) {
+func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason, strategy strategies.Strategy) {
 	ctx.StateBag()[authUserKey] = uname
 	ctx.StateBag()[authRejectReasonKey] = string(reason)
-	ctx.Serve(&http.Response{StatusCode: http.StatusUnauthorized})
+
+	strategy.Unauthorized(ctx)
 }
 
-func authorized(ctx filters.FilterContext, uname string) {
+func authorized(ctx filters.FilterContext, uname string, strategy strategies.Strategy) {
 	ctx.StateBag()["auth-user"] = uname
+
+	strategy.Authorized(ctx)
 }
 
 func getStrings(args []interface{}) ([]string, error) {
@@ -289,8 +295,8 @@ func (tc *teamClient) getTeams(uid, token string) ([]string, error) {
 	return ts, nil
 }
 
-func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string) filters.Spec {
-	s := &spec{typ: typ, authClient: &authClient{authUrlBase}}
+func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy strategies.Strategy) filters.Spec {
+	s := &spec{typ: typ, authClient: &authClient{authUrlBase}, strategy: strategy}
 	if typ == checkTeam {
 		s.teamClient = &teamClient{teamUrlBase}
 	}
@@ -308,8 +314,8 @@ func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string) filters.Spec {
 // the token ('uid' and 'realm' fields in the returned json document).
 // The token is set as the Authorization Bearer header.
 //
-func NewAuth(authUrlBase string) filters.Spec {
-	return newSpec(checkScope, authUrlBase, "")
+func NewAuth(authUrlBase string, strategy strategies.Strategy) filters.Spec {
+	return newSpec(checkScope, authUrlBase, "", strategy)
 }
 
 // Creates a new auth filter specification to validate authorization
@@ -326,8 +332,8 @@ func NewAuth(authUrlBase string) filters.Spec {
 // user is a member of ('id' field of the returned json document's
 // items). The user id of the user is appended at the end of the url.
 //
-func NewAuthTeam(authUrlBase, teamUrlBase string) filters.Spec {
-	return newSpec(checkTeam, authUrlBase, teamUrlBase)
+func NewAuthTeam(authUrlBase, teamUrlBase string, strategy strategies.Strategy) filters.Spec {
+	return newSpec(checkTeam, authUrlBase, teamUrlBase, strategy)
 }
 
 func (s *spec) Name() string {
@@ -344,7 +350,7 @@ func (s *spec) CreateFilter(args []interface{}) (filters.Filter, error) {
 		return nil, err
 	}
 
-	f := &filter{typ: s.typ, authClient: s.authClient, teamClient: s.teamClient}
+	f := &filter{typ: s.typ, authClient: s.authClient, teamClient: s.teamClient, strategy: s.strategy}
 	if len(sargs) > 0 {
 		f.realm, f.args = sargs[0], sargs[1:]
 	}
@@ -383,7 +389,7 @@ func (f *filter) Request(ctx filters.FilterContext) {
 
 	token, err := getToken(r)
 	if err != nil {
-		unauthorized(ctx, "", missingBearerToken)
+		unauthorized(ctx, "", missingBearerToken, f.strategy)
 		return
 	}
 
@@ -396,32 +402,32 @@ func (f *filter) Request(ctx filters.FilterContext) {
 			log.Println(err)
 		}
 
-		unauthorized(ctx, "", reason)
+		unauthorized(ctx, "", reason, f.strategy)
 		return
 	}
 
 	if !f.validateRealm(a) {
-		unauthorized(ctx, a.Uid, invalidRealm)
+		unauthorized(ctx, a.Uid, invalidRealm, f.strategy)
 		return
 	}
 
 	if f.typ == checkScope {
 		if !f.validateScope(a) {
-			unauthorized(ctx, a.Uid, invalidScope)
+			unauthorized(ctx, a.Uid, invalidScope, f.strategy)
 			return
 		}
 
-		authorized(ctx, a.Uid)
+		authorized(ctx, a.Uid, f.strategy)
 		return
 	}
 
 	if valid, err := f.validateTeam(token, a); err != nil {
-		unauthorized(ctx, a.Uid, teamServiceAccess)
+		unauthorized(ctx, a.Uid, teamServiceAccess, f.strategy)
 		log.Println(err)
 	} else if !valid {
-		unauthorized(ctx, a.Uid, invalidTeam)
+		unauthorized(ctx, a.Uid, invalidTeam, f.strategy)
 	} else {
-		authorized(ctx, a.Uid)
+		authorized(ctx, a.Uid, f.strategy)
 	}
 }
 
