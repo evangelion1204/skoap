@@ -16,7 +16,8 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/zalando-incubator/skoap"
-	skoapFilters "github.com/zalando-incubator/skoap/filters"
+	"github.com/zalando-incubator/skoap/filters/auth"
+	"github.com/zalando-incubator/skoap/filters/callback"
 	"github.com/zalando-incubator/skoap/strategies"
 	"github.com/zalando/skipper"
 	"github.com/zalando/skipper/eskip"
@@ -24,6 +25,8 @@ import (
 	"github.com/zalando/skipper/filters/builtin"
 	"github.com/zalando/skipper/proxy"
 	"github.com/zalando/skipper/routing"
+	"github.com/zalando-incubator/skoap/oauth"
+	"github.com/zalando/go-tokens/client"
 )
 
 const (
@@ -54,6 +57,13 @@ const (
 	verboseFlag = "v"
 
 	experimentalUpgradeFlag = "experimental-upgrade"
+
+	providerUrlFlag = "provider"
+	accessTokenUrlFlag = "access-token-url"
+
+	credentialSecretFlag = "credential-secret"
+	credentialClientIdFlag = "credential-client-id"
+	credentialFileFlag = "credential-file"
 )
 
 const (
@@ -145,6 +155,11 @@ var (
 	keyPathTLS          string
 	verbose             bool
 	experimentalUpgrade bool
+	providerUrl			string
+	accessTokenUrl		string
+	credentialSecret	string
+	credentialClientId	string
+	credentialFile		string
 )
 
 func (src *singleRouteClient) LoadAll() ([]*eskip.Route, error) {
@@ -182,6 +197,11 @@ func init() {
 	fs.StringVar(&keyPathTLS, tlsKeyFlag, "", keyPathTLSUsage)
 	fs.BoolVar(&verbose, verboseFlag, false, verboseUsage)
 	fs.BoolVar(&experimentalUpgrade, experimentalUpgradeFlag, false, experimentalUpgradeUsage)
+	fs.StringVar(&providerUrl, providerUrlFlag, "", "")
+	fs.StringVar(&accessTokenUrl, accessTokenUrlFlag, "", "")
+	fs.StringVar(&credentialSecret, credentialSecretFlag, "", "")
+	fs.StringVar(&credentialClientId, credentialClientIdFlag, "", "")
+	fs.StringVar(&credentialFile, credentialFileFlag, "", "")
 
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
@@ -246,15 +266,26 @@ func main() {
 		teamUrlBase = defaultTeamUrlBase
 	}
 
+	var credentialProvider client.CredentialsProvider
+
+	if credentialFile != "" {
+		credentialProvider = client.NewJSONFileClientCredentialsProvider(credentialFile)
+	} else {
+		credentialProvider = client.NewStaticClientCredentialsProvider(credentialClientId, credentialSecret)
+	}
+
 	o := skipper.Options{
 		Address:    address,
 		EtcdPrefix: etcdPrefix,
 		CustomFilters: []filters.Spec{
-			skoapFilters.NewCallback(strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
+			callback.New(authUrlBase,
+				strategies.NewAuthenticate(providerUrl),
+				oauth.NewClient(accessTokenUrl, credentialProvider)),
+			auth.NewAuthStorage(),
 			// skoap.NewAuth(authUrlBase, strategies.NewPassthrough()),
 			// skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewPassthrough()),
-			skoap.NewAuth(authUrlBase, strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
-			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewAuthenticate("https://auth.zalando.com/oauth2/authorize?response_type=code&client_id=stups_frontend-blog-seo-staging_9bb87301-d4d2-4add-a6ee-4f8129eed1c7&realm=/employees&redirect_uri=https://router.local/callback")),
+			skoap.NewAuth(authUrlBase, strategies.NewAuthenticate(providerUrl)),
+			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewAuthenticate(providerUrl)),
 			skoap.NewBasicAuth(),
 			skoap.NewAuditLog(os.Stderr)},
 		AccessLogDisabled:   true,
