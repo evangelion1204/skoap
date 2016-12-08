@@ -99,11 +99,11 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/zalando/skipper/filters"
+	"github.com/zalando-incubator/skoap/filters/auth"
 	"io"
 	"log"
 	"net/http"
 	"strings"
-	"github.com/zalando-incubator/skoap/strategies"
 )
 
 const (
@@ -156,7 +156,7 @@ type (
 		typ        roleCheckType
 		authClient *authClient
 		teamClient *teamClient
-		strategy   strategies.Strategy
+		strategy   auth.Strategy
 	}
 
 	filter struct {
@@ -165,7 +165,7 @@ type (
 		teamClient *teamClient
 		realm      string
 		args       []string
-		strategy   strategies.Strategy
+		strategy   auth.Strategy
 	}
 
 	basic string
@@ -212,14 +212,14 @@ func getToken(r *http.Request) (string, error) {
 	return h[len(b):], nil
 }
 
-func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason, strategy strategies.Strategy) {
+func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason, strategy auth.Strategy) {
 	ctx.StateBag()[authUserKey] = uname
 	ctx.StateBag()[authRejectReasonKey] = string(reason)
 
 	strategy.Unauthorized(ctx)
 }
 
-func authorized(ctx filters.FilterContext, uname string, strategy strategies.Strategy) {
+func authorized(ctx filters.FilterContext, uname string, strategy auth.Strategy) {
 	ctx.StateBag()["auth-user"] = uname
 
 	strategy.Authorized(ctx)
@@ -295,7 +295,7 @@ func (tc *teamClient) getTeams(uid, token string) ([]string, error) {
 	return ts, nil
 }
 
-func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy strategies.Strategy) filters.Spec {
+func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy auth.Strategy) filters.Spec {
 	s := &spec{typ: typ, authClient: &authClient{authUrlBase}, strategy: strategy}
 	if typ == checkTeam {
 		s.teamClient = &teamClient{teamUrlBase}
@@ -314,7 +314,7 @@ func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy strate
 // the token ('uid' and 'realm' fields in the returned json document).
 // The token is set as the Authorization Bearer header.
 //
-func NewAuth(authUrlBase string, strategy strategies.Strategy) filters.Spec {
+func NewAuth(authUrlBase string, strategy auth.Strategy) filters.Spec {
 	return newSpec(checkScope, authUrlBase, "", strategy)
 }
 
@@ -332,7 +332,7 @@ func NewAuth(authUrlBase string, strategy strategies.Strategy) filters.Spec {
 // user is a member of ('id' field of the returned json document's
 // items). The user id of the user is appended at the end of the url.
 //
-func NewAuthTeam(authUrlBase, teamUrlBase string, strategy strategies.Strategy) filters.Spec {
+func NewAuthTeam(authUrlBase, teamUrlBase string, strategy auth.Strategy) filters.Spec {
 	return newSpec(checkTeam, authUrlBase, teamUrlBase, strategy)
 }
 

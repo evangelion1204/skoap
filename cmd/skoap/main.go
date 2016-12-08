@@ -18,7 +18,6 @@ import (
 	"github.com/zalando-incubator/skoap"
 	"github.com/zalando-incubator/skoap/filters/auth"
 	"github.com/zalando-incubator/skoap/filters/callback"
-	"github.com/zalando-incubator/skoap/strategies"
 	"github.com/zalando/skipper"
 	"github.com/zalando/skipper/eskip"
 	"github.com/zalando/skipper/filters"
@@ -279,13 +278,13 @@ func main() {
 		EtcdPrefix: etcdPrefix,
 		CustomFilters: []filters.Spec{
 			callback.New(authUrlBase,
-				strategies.NewAuthenticate(providerUrl),
+				auth.NewAuthenticate(providerUrl),
 				oauth.NewClient(accessTokenUrl, credentialProvider)),
 			auth.NewAuthStorage(),
 			// skoap.NewAuth(authUrlBase, strategies.NewPassthrough()),
 			// skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewPassthrough()),
-			skoap.NewAuth(authUrlBase, strategies.NewAuthenticate(providerUrl)),
-			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewAuthenticate(providerUrl)),
+			skoap.NewAuth(authUrlBase, auth.NewAuthenticate(providerUrl)),
+			skoap.NewAuthTeam(authUrlBase, teamUrlBase, auth.NewAuthenticate(providerUrl)),
 			skoap.NewBasicAuth(),
 			skoap.NewAuditLog(os.Stderr)},
 		AccessLogDisabled:   true,

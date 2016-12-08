@@ -1,4 +1,4 @@
-package strategies
+package auth
 
 import (
     "github.com/zalando/skipper/filters"
