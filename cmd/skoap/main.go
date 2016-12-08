@@ -18,14 +18,14 @@ import (
 	"github.com/zalando-incubator/skoap"
 	"github.com/zalando-incubator/skoap/filters/auth"
 	"github.com/zalando-incubator/skoap/filters/callback"
+	"github.com/zalando-incubator/skoap/oauth"
+	"github.com/zalando/go-tokens/client"
 	"github.com/zalando/skipper"
 	"github.com/zalando/skipper/eskip"
 	"github.com/zalando/skipper/filters"
 	"github.com/zalando/skipper/filters/builtin"
 	"github.com/zalando/skipper/proxy"
 	"github.com/zalando/skipper/routing"
-	"github.com/zalando-incubator/skoap/oauth"
-	"github.com/zalando/go-tokens/client"
 )
 
 const (
@@ -57,12 +57,13 @@ const (
 
 	experimentalUpgradeFlag = "experimental-upgrade"
 
-	providerUrlFlag = "provider"
+	providerUrlFlag    = "provider"
 	accessTokenUrlFlag = "access-token-url"
 
-	credentialSecretFlag = "credential-secret"
+	credentialSecretFlag   = "credential-secret"
 	credentialClientIdFlag = "credential-client-id"
-	credentialFileFlag = "credential-file"
+	credentialFileFlag     = "credential-file"
+	redirectUrlFlag        = "redirect-url"
 )
 
 const (
@@ -154,11 +155,12 @@ var (
 	keyPathTLS          string
 	verbose             bool
 	experimentalUpgrade bool
-	providerUrl			string
-	accessTokenUrl		string
-	credentialSecret	string
-	credentialClientId	string
-	credentialFile		string
+	providerUrl         string
+	accessTokenUrl      string
+	credentialSecret    string
+	credentialClientId  string
+	credentialFile      string
+	redirectUrl         string
 )
 
 func (src *singleRouteClient) LoadAll() ([]*eskip.Route, error) {
@@ -201,6 +203,7 @@ func init() {
 	fs.StringVar(&credentialSecret, credentialSecretFlag, "", "")
 	fs.StringVar(&credentialClientId, credentialClientIdFlag, "", "")
 	fs.StringVar(&credentialFile, credentialFileFlag, "", "")
+	fs.StringVar(&redirectUrl, redirectUrlFlag, "", "")
 
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
@@ -273,18 +276,24 @@ func main() {
 		credentialProvider = client.NewStaticClientCredentialsProvider(credentialClientId, credentialSecret)
 	}
 
+	var strategy auth.Strategy
+
+	if providerUrl != "" {
+		strategy = auth.NewAuthenticate(providerUrl, "/employees", redirectUrl, credentialProvider)
+	} else {
+		strategy = auth.NewPassthrough()
+	}
+
 	o := skipper.Options{
 		Address:    address,
 		EtcdPrefix: etcdPrefix,
 		CustomFilters: []filters.Spec{
 			callback.New(authUrlBase,
-				auth.NewAuthenticate(providerUrl),
+				strategy,
 				oauth.NewClient(accessTokenUrl, credentialProvider)),
 			auth.NewAuthStorage(),
-			// skoap.NewAuth(authUrlBase, strategies.NewPassthrough()),
-			// skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategies.NewPassthrough()),
-			skoap.NewAuth(authUrlBase, auth.NewAuthenticate(providerUrl)),
-			skoap.NewAuthTeam(authUrlBase, teamUrlBase, auth.NewAuthenticate(providerUrl)),
+			skoap.NewAuth(authUrlBase, strategy),
+			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategy),
 			skoap.NewBasicAuth(),
 			skoap.NewAuditLog(os.Stderr)},
 		AccessLogDisabled:   true,
@@ -297,6 +306,8 @@ func main() {
 	if insecure {
 		o.ProxyOptions |= proxy.OptionsInsecure
 	}
+
+	o.ProxyOptions |= proxy.OptionsPreserveHost
 
 	if routesFile != "" {
 		o.RoutesFile = routesFile

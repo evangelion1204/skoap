@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	AuthStorageName = "authStorage"
+	AuthStorageName       = "authStorage"
 	AuthStorageCookieName = "auth"
-	AuthorizationPrefix = "Bearer "
+	AuthorizationPrefix   = "Bearer "
 )
 
 type (
@@ -41,14 +41,14 @@ func (f *filter) Request(ctx filters.FilterContext) {
 	authCookie, err := request.Cookie(AuthStorageCookieName)
 
 	if err == nil {
-		request.Header.Set("Authorization", AuthorizationPrefix + authCookie.Value)
+		request.Header.Set("Authorization", AuthorizationPrefix+authCookie.Value)
 	}
 }
 
 func (f *filter) Response(ctx filters.FilterContext) {
 	newAuth := ctx.Response().Header.Get("Authorization")
 
-	if newAuth != ""  {
+	if newAuth != "" {
 		extractedToken := newAuth[len(AuthorizationPrefix):]
 		cookie := &http.Cookie{
 			Name:     AuthStorageCookieName,

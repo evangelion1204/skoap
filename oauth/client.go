@@ -1,18 +1,18 @@
 package oauth
 
 import (
-	"io/ioutil"
-	"net/url"
-	"net/http"
-	"strings"
-	"github.com/zalando/go-tokens/client"
-	"errors"
 	"encoding/json"
+	"errors"
+	"github.com/zalando/go-tokens/client"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"strings"
 )
 
 type Client struct {
 	authUrlBase string
-	provider client.CredentialsProvider
+	provider    client.CredentialsProvider
 }
 
 func NewClient(authUrlBase string, provider client.CredentialsProvider) Client {
@@ -35,7 +35,7 @@ func (c *Client) GetAccessTokenByCode(code string) (string, error) {
 
 	request, _ := http.NewRequest(
 		"POST",
-		c.authUrlBase + "/oauth2/access_token" + "?" + params.Encode(),
+		c.authUrlBase+"/oauth2/access_token"+"?"+params.Encode(),
 		strings.NewReader(""),
 	)
 
