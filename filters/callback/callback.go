@@ -1,7 +1,6 @@
 package callback
 
 import (
-	"github.com/zalando-incubator/skoap/filters/auth"
 	"github.com/zalando-incubator/skoap/oauth"
 	"github.com/zalando/skipper/filters"
 	"net/http"
@@ -14,19 +13,17 @@ const (
 type (
 	spec struct {
 		authUrlBase string
-		strategy    auth.Strategy
 		client      oauth.Client
 	}
 
 	filter struct {
 		authUrlBase string
-		strategy    auth.Strategy
 		client      oauth.Client
 	}
 )
 
-func New(authUrlBase string, strategy auth.Strategy, client oauth.Client) filters.Spec {
-	s := &spec{authUrlBase: authUrlBase, strategy: strategy, client: client}
+func New(authUrlBase string, client oauth.Client) filters.Spec {
+	s := &spec{authUrlBase: authUrlBase, client: client}
 
 	return s
 }
@@ -36,7 +33,7 @@ func (s *spec) Name() string {
 }
 
 func (s *spec) CreateFilter(args []interface{}) (filters.Filter, error) {
-	f := &filter{authUrlBase: s.authUrlBase, strategy: s.strategy, client: s.client}
+	f := &filter{authUrlBase: s.authUrlBase, client: s.client}
 
 	return f, nil
 

@@ -132,10 +132,12 @@ const (
 )
 
 const (
-	AuthName      = "auth"
-	AuthTeamName  = "authTeam"
-	BasicAuthName = "basicAuth"
-	AuditLogName  = "auditLog"
+	AuthName          = "auth"
+	AuthTeamName      = "authTeam"
+	BasicAuthName     = "basicAuth"
+	AuditLogName      = "auditLog"
+	CheckAuthName     = "checkAuth"
+	CheckAuthTeamName = "checkAuthTeam"
 )
 
 type (
@@ -156,7 +158,6 @@ type (
 		typ        roleCheckType
 		authClient *authClient
 		teamClient *teamClient
-		strategy   auth.Strategy
 	}
 
 	filter struct {
@@ -165,7 +166,6 @@ type (
 		teamClient *teamClient
 		realm      string
 		args       []string
-		strategy   auth.Strategy
 	}
 
 	basic string
@@ -195,6 +195,15 @@ type (
 		AuthStatus  *authStatusDoc `json:"authStatus,omitempty"`
 		RequestBody string         `json:"requestBody,omitempty"`
 	}
+
+	chainFilter struct {
+		name    string
+		filters []filters.Filter
+	}
+	chainSpec struct {
+		name  string
+		specs []filters.Spec
+	}
 )
 
 var (
@@ -212,17 +221,13 @@ func getToken(r *http.Request) (string, error) {
 	return h[len(b):], nil
 }
 
-func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason, strategy auth.Strategy) {
+func unauthorized(ctx filters.FilterContext, uname string, reason rejectReason) {
 	ctx.StateBag()[authUserKey] = uname
 	ctx.StateBag()[authRejectReasonKey] = string(reason)
-
-	strategy.Unauthorized(ctx)
 }
 
-func authorized(ctx filters.FilterContext, uname string, strategy auth.Strategy) {
-	ctx.StateBag()["auth-user"] = uname
-
-	strategy.Authorized(ctx)
+func authorized(ctx filters.FilterContext, uname string) {
+	ctx.StateBag()[authUserKey] = uname
 }
 
 func getStrings(args []interface{}) ([]string, error) {
@@ -295,8 +300,8 @@ func (tc *teamClient) getTeams(uid, token string) ([]string, error) {
 	return ts, nil
 }
 
-func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy auth.Strategy) filters.Spec {
-	s := &spec{typ: typ, authClient: &authClient{authUrlBase}, strategy: strategy}
+func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string) filters.Spec {
+	s := &spec{typ: typ, authClient: &authClient{authUrlBase}}
 	if typ == checkTeam {
 		s.teamClient = &teamClient{teamUrlBase}
 	}
@@ -314,8 +319,8 @@ func newSpec(typ roleCheckType, authUrlBase, teamUrlBase string, strategy auth.S
 // the token ('uid' and 'realm' fields in the returned json document).
 // The token is set as the Authorization Bearer header.
 //
-func NewAuth(authUrlBase string, strategy auth.Strategy) filters.Spec {
-	return newSpec(checkScope, authUrlBase, "", strategy)
+func NewCheckAuth(authUrlBase string) filters.Spec {
+	return newSpec(checkScope, authUrlBase, "")
 }
 
 // Creates a new auth filter specification to validate authorization
@@ -332,15 +337,15 @@ func NewAuth(authUrlBase string, strategy auth.Strategy) filters.Spec {
 // user is a member of ('id' field of the returned json document's
 // items). The user id of the user is appended at the end of the url.
 //
-func NewAuthTeam(authUrlBase, teamUrlBase string, strategy auth.Strategy) filters.Spec {
-	return newSpec(checkTeam, authUrlBase, teamUrlBase, strategy)
+func NewCheckAuthTeam(authUrlBase, teamUrlBase string) filters.Spec {
+	return newSpec(checkTeam, authUrlBase, teamUrlBase)
 }
 
 func (s *spec) Name() string {
 	if s.typ == checkScope {
-		return AuthName
+		return CheckAuthName
 	} else {
-		return AuthTeamName
+		return CheckAuthTeamName
 	}
 }
 
@@ -350,7 +355,7 @@ func (s *spec) CreateFilter(args []interface{}) (filters.Filter, error) {
 		return nil, err
 	}
 
-	f := &filter{typ: s.typ, authClient: s.authClient, teamClient: s.teamClient, strategy: s.strategy}
+	f := &filter{typ: s.typ, authClient: s.authClient, teamClient: s.teamClient}
 	if len(sargs) > 0 {
 		f.realm, f.args = sargs[0], sargs[1:]
 	}
@@ -389,7 +394,7 @@ func (f *filter) Request(ctx filters.FilterContext) {
 
 	token, err := getToken(r)
 	if err != nil {
-		unauthorized(ctx, "", missingBearerToken, f.strategy)
+		unauthorized(ctx, "", missingBearerToken)
 		return
 	}
 
@@ -402,32 +407,32 @@ func (f *filter) Request(ctx filters.FilterContext) {
 			log.Println(err)
 		}
 
-		unauthorized(ctx, "", reason, f.strategy)
+		unauthorized(ctx, "", reason)
 		return
 	}
 
 	if !f.validateRealm(a) {
-		unauthorized(ctx, a.Uid, invalidRealm, f.strategy)
+		unauthorized(ctx, a.Uid, invalidRealm)
 		return
 	}
 
 	if f.typ == checkScope {
 		if !f.validateScope(a) {
-			unauthorized(ctx, a.Uid, invalidScope, f.strategy)
+			unauthorized(ctx, a.Uid, invalidScope)
 			return
 		}
 
-		authorized(ctx, a.Uid, f.strategy)
+		authorized(ctx, a.Uid)
 		return
 	}
 
 	if valid, err := f.validateTeam(token, a); err != nil {
-		unauthorized(ctx, a.Uid, teamServiceAccess, f.strategy)
+		unauthorized(ctx, a.Uid, teamServiceAccess)
 		log.Println(err)
 	} else if !valid {
-		unauthorized(ctx, a.Uid, invalidTeam, f.strategy)
+		unauthorized(ctx, a.Uid, invalidTeam)
 	} else {
-		authorized(ctx, a.Uid, f.strategy)
+		authorized(ctx, a.Uid)
 	}
 }
 
@@ -566,4 +571,66 @@ func (al *auditLog) Response(ctx filters.FilterContext) {
 	if err != nil {
 		log.Println(err)
 	}
+}
+
+func NewAuth(authUrlBase string) chainSpec {
+	return chainSpec{
+		name: AuthName,
+		specs: []filters.Spec{
+			NewCheckAuth(authUrlBase),
+			auth.NewAuthReject(),
+		},
+	}
+}
+
+func NewAuthTeam(authUrlBase, teamUrlBase string) chainSpec {
+	return chainSpec{
+		name: AuthTeamName,
+		specs: []filters.Spec{
+			NewCheckAuthTeam(authUrlBase, teamUrlBase),
+			auth.NewAuthReject(),
+		},
+	}
+}
+
+func (fs chainFilter) Request(ctx filters.FilterContext) {
+	for i, filter := range fs.filters {
+		filter.Request(ctx)
+		if ctx.Served() {
+			ctx.StateBag()[fs.name+"ExitIndex"] = i
+			return
+		}
+	}
+}
+
+func (fs chainFilter) Response(ctx filters.FilterContext) {
+	if index, ok := ctx.StateBag()[fs.name+"ExitIndex"]; ok {
+		fs.filters = fs.filters[:index.(int)]
+	}
+	for _, filter := range fs.filters {
+		filter.Response(ctx)
+	}
+}
+
+func (s chainSpec) Name() string {
+	return s.name
+}
+
+func (s chainSpec) CreateFilter(config []interface{}) (filters.Filter, error) {
+	newFilter := chainFilter{
+		name:    s.name,
+		filters: make([]filters.Filter, len(s.specs)),
+	}
+
+	for i, sp := range s.specs {
+		filter, err := sp.CreateFilter(config)
+
+		if err != nil {
+			return nil, err
+		}
+
+		newFilter.filters[i] = filter
+	}
+
+	return newFilter, nil
 }

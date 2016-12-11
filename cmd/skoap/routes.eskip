@@ -1,7 +1,22 @@
-test: Path("/headers") -> "http://httpbin.org";
 callback: Path("/callback") -> authStorage() -> callback() -> <shunt>;
 
-catchAll: *
+ip: Path("/ip")
+    -> auditLog()
+    -> authStorage()
+    -> checkAuth("/employees")
+    -> authRedirectProvider()
+    -> dropRequestHeader("Authorization")
+    -> "http://httpbin.org";
+
+headers: Path("/headers")
+    -> auditLog()
+    -> authStorage()
+    -> checkAuth("/employees")
+    -> authReject()
+    -> dropRequestHeader("Authorization")
+    -> "http://httpbin.org";
+
+all: *
     -> auditLog()
     -> authStorage()
     -> auth("/employees")

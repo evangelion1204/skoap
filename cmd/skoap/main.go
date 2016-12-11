@@ -276,24 +276,18 @@ func main() {
 		credentialProvider = client.NewStaticClientCredentialsProvider(credentialClientId, credentialSecret)
 	}
 
-	var strategy auth.Strategy
-
-	if providerUrl != "" {
-		strategy = auth.NewAuthenticate(providerUrl, "/employees", redirectUrl, credentialProvider)
-	} else {
-		strategy = auth.NewPassthrough()
-	}
-
 	o := skipper.Options{
 		Address:    address,
 		EtcdPrefix: etcdPrefix,
 		CustomFilters: []filters.Spec{
-			callback.New(authUrlBase,
-				strategy,
-				oauth.NewClient(accessTokenUrl, credentialProvider)),
+			callback.New(authUrlBase, oauth.NewClient(accessTokenUrl, credentialProvider)),
 			auth.NewAuthStorage(),
-			skoap.NewAuth(authUrlBase, strategy),
-			skoap.NewAuthTeam(authUrlBase, teamUrlBase, strategy),
+			skoap.NewAuth(authUrlBase),
+			skoap.NewAuthTeam(authUrlBase, teamUrlBase),
+			skoap.NewCheckAuth(authUrlBase),
+			skoap.NewCheckAuthTeam(authUrlBase, teamUrlBase),
+			auth.NewAuthReject(),
+			auth.NewAuthRedirectProvider(providerUrl, "/employees", redirectUrl, credentialProvider),
 			skoap.NewBasicAuth(),
 			skoap.NewAuditLog(os.Stderr)},
 		AccessLogDisabled:   true,
